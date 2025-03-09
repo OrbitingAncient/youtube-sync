@@ -1,38 +1,33 @@
 const http = require('http');
 const WebSocket = require('ws');
+const os = require('os'); // To get network interfaces
 
-// Create an HTTP server to satisfy Render's requirements
+// Create an HTTP server
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('WebSocket server is running\n');
 });
 
-// Create a WebSocket server attached to the HTTP server
+// Create a WebSocket server
 const wss = new WebSocket.Server({ server });
 
 // Object to store rooms and their connected clients
 const rooms = {};
 
-// Handle new WebSocket connections
+// Handle WebSocket connections
 wss.on('connection', (ws) => {
   console.log('Client connected');
 
-  // Handle incoming messages from clients
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-
-      // Handle 'join' message: add client to the specified room
       if (data.type === 'join') {
         const room = data.room;
         if (!rooms[room]) rooms[room] = [];
         rooms[room].push(ws);
         ws.room = room;
         console.log(`Client joined room: ${room}`);
-      }
-
-      // Handle 'action' message: broadcast action to other clients in the same room
-      else if (data.type === 'action') {
+      } else if (data.type === 'action') {
         const room = ws.room;
         if (room && rooms[room]) {
           rooms[room].forEach((client) => {
@@ -47,23 +42,34 @@ wss.on('connection', (ws) => {
     }
   });
 
-  // Handle client disconnection: remove client from room
   ws.on('close', () => {
     console.log('Client disconnected');
     const room = ws.room;
     if (room && rooms[room]) {
       rooms[room] = rooms[room].filter((client) => client !== ws);
-      if (rooms[room].length === 0) {
-        delete rooms[room];
-        console.log(`Room ${room} deleted`);
-      }
+      if (rooms[room].length === 0) delete rooms[room];
     }
   });
 });
 
-// Set the server to listen on the port provided by Render or default to 8080
+// Get the container's IP address
+function getServerAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost'; // Fallback if no external IP is found
+}
+
+// Start the server
 const PORT = process.env.PORT || 8080;
-const HOST = '0.0.0.0'; // Listen on all network interfaces
+const HOST = '0.0.0.0';
 server.listen(PORT, HOST, () => {
-  console.log(`Server listening on http://${HOST}:${PORT}`);
+  const address = getServerAddress();
+  console.log(`Server listening on http://${address}:${PORT}`);
+  console.log(`Use this WebSocket address: ws://${address}:${PORT}`);
 });
